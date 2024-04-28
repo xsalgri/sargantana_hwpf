@@ -11,7 +11,6 @@ module hwpf_stack
     //  Parameters
     //  {{{
 #(
-    integer LANE_SIZE = 64, // Size of the cache line
     integer STACK_DEPTH = 8, // Number of positions in queue
     type cpu_addr_t=logic[$size(req_cpu_dcache_t::io_base_addr)-1:0] // Type of the structure to be used
 )

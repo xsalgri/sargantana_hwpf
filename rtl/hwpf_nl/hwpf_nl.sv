@@ -46,7 +46,33 @@ module hwpf_nl
     // Next lane being sent to the queue
     logic insert_queue;
     cpu_addr_t insert_value_queue;
+    // }}}
 
+    // Stack instance
+    // {{{
+    // Stack
+    logic stack_push_i;
+    cpu_addr_t stack_val_i;
+    logic stack_pop_i;
+    logic stack_valid_o;
+    cpu_addr_t stack_req_o;
+
+    hwpf_stack stack (
+        .clk_i,
+        .rst_ni,
+        .flush_i,
+        .lock_i,
+
+        // CPU push gate
+        .push_i(stack_push_i),
+        .val_i(stack_val_i),
+        // CPU pop gate
+        .pop_i(stack_pop_i),
+
+        // Request emission
+        .valid_o(stack_valid_o),
+        .req_o(stack_req_o),
+    );
     // }}}
 
     // Arbiter default assignations
@@ -58,8 +84,8 @@ module hwpf_nl
     // Decide if we have data to send to the arbiter. 
     // We will try to send the latest value that would have been 
     // inserted into the queue if available.
-    assign arbiter_req_valid_o = ~lock_i && (queue[0].valid_o || insert_queue);
-    assign arbiter_req_o.addr = insert_queue ? insert_value_queue : queue[0].val_o;
+    assign arbiter_req_valid_o = ~lock_i && (stack_valid_o || insert_queue);
+    assign arbiter_req_o.addr = insert_queue ? insert_value_queue : stack_req_o;
 
     function logic cpu_feed_res(req_cpu_dcache_t cpu_req_i, logic lock_i, ref cpu_addr_t tid_q);
         if (tid_q != cpu_req_i.rd) begin
@@ -154,13 +180,13 @@ module hwpf_nl
       end
       else if (~lock_i && insert_queue) begin
         // Send the next address in the queue
-        queue[0].val_i = insert_value_queue;
-        queue[0].push_i = 1'b1;
+        stack_val_i = insert_value_queue;
+        stack_push_i = 1'b1;
         insert_queue = 1'b0;
       end
       else if (~lock_i && arbiter_req_ready_i) begin
         // Extract a value from the queue
-        queue[0].pop_i = 1'b1;
+        stack_pop_i = 1'b1;
       end
     end
 

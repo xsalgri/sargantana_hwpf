@@ -39,7 +39,7 @@ module hwpf_fifo
 
     // Requests emitted by the prefetcher
     output logic                          arbiter_req_valid_o,
-    output cpu_addr_t                     arbiter_req_o,
+    output cpu_addr_t                     arbiter_req_o
 );
 int i, j;
 
@@ -96,8 +96,8 @@ cpu_addr_t                     arbiter_req;
 
   //Queue read/writes
   always@(posedge clk_i, negedge rst_ni) 
-    int displacement;
   begin
+    int displacement;
     displacement = 0;
     // in case of reset
     if(~rst_ni) begin
