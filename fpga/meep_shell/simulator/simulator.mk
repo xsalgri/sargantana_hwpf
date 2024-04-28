@@ -17,7 +17,7 @@ MEEP_VERI_FLAGS = \
 	--top-module $(TOP_MODULE) \
 	--unroll-count 256 \
 	-Wno-lint -Wno-style -Wno-STMTDLY -Wno-fatal \
-	-CFLAGS "-std=c++11 -I$(SIM_DIR)/riscv-isa-sim/" \
+	-CFLAGS "-std=c++17 -I$(SIM_DIR)/riscv-isa-sim/" \
 	-LDFLAGS "-pthread -L$(SIM_DIR)/riscv-isa-sim/build/ -l:libriscv.a -l:libdisasm.a -ldl" \
 	--exe \
 	--trace-fst \

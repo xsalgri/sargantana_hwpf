@@ -18,7 +18,7 @@ VERI_FLAGS = \
 	--top-module $(TOP_MODULE) \
 	--unroll-count 256 \
 	-Wno-lint -Wno-style -Wno-STMTDLY -Wno-fatal \
-	-CFLAGS "-std=c++11 -I$(SPIKE_DIR)/riscv-isa-sim/" \
+	-CFLAGS "-std=c++17 -I$(SPIKE_DIR)/riscv-isa-sim/" \
 	-LDFLAGS "-pthread -L$(SPIKE_DIR)/build/ -Wl,-rpath=$(SPIKE_DIR)/build/ -ldisasm -ldl" \
 	--exe \
 	--trace-fst \

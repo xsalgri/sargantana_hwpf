@@ -5,7 +5,7 @@ import hpdcache_pkg::*;
 module hwpf_fifo_tb (
 );
     int i;
-    
+
     logic clk;
     logic rst;
 
@@ -21,7 +21,7 @@ module hwpf_fifo_tb (
     logic req_valid;
     req_cpu_dcache_t req_arb;
 
-   hwpf_fifo fifo   
+   hwpf_fifo fifo
    (
     .clk_i(clk),
     .rst_ni(rst),
@@ -149,6 +149,7 @@ initial begin
     arbiter_req_ready <= 1'b0;
 
     //Basic cases should be covered. Expect edge cases!
+    $finish;
 end
 
 //Clock Driver

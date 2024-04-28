@@ -4,15 +4,14 @@
  *  Description   : Next line prefetcher for the Sargantana processor
  *  History       :
  */
-import drac_pkg::*;
-import hpdcache_pkg::*;
+import drac_pkg::addr_t;
 
 module hwpf_stack
     //  Parameters
     //  {{{
 #(
-    integer STACK_DEPTH = 8, // Number of positions in queue
-    type cpu_addr_t=logic[$size(req_cpu_dcache_t::io_base_addr)-1:0] // Type of the structure to be used
+    parameter integer STACK_DEPTH = 8, // Number of positions in queue
+    parameter type cpu_addr_t=addr_t // Type of the structure to be used
 )
     //  }}}
     //  Signals
@@ -32,39 +31,37 @@ module hwpf_stack
 
     // Request emission
     output logic                          valid_o,
-    output cpu_addr_t                     req_o,
+    output cpu_addr_t                     req_o
 );
 
   //Fields of non-shifting queue
   cpu_addr_t                      data_cpu [STACK_DEPTH-1:0];
-  
+
   // Shifting pointers
-  typedef logic [$log2(STACK_DEPTH)-1:0] pointer_t;
+  typedef logic [$clog2(STACK_DEPTH)-1:0] pointer_t;
   pointer_t                       pointers[STACK_DEPTH-1:0];
 
 
   //Fields of shifting queue
-  pointer_t                       counter;
+  logic [$clog2(STACK_DEPTH):0]   counter; // Extra bit for full!
   logic                           empty;
   logic                           full;
 
   // assign empty and full
   assign empty = counter == 0;
-  assign full = counter == STACK_DEPTH-1;
+  assign full = counter == STACK_DEPTH;
 
   // Output matches the last element of the queue. It is valid if the size of the queue is not 0
   assign valid_o = !empty;
-  assign req_o = empty ? 0 : data_cpu[counter-1];
-
-  function void push(input cpu_addr_t val, output )
-  endfunction
+  assign req_o = empty ? 0 : data_cpu[pointers[counter-1]];
 
   //Queue read/writes
   always@(posedge clk_i, negedge rst_ni) begin
+    int i;
     // in case of reset
     if(~rst_ni) begin
       counter <= '0;
-      for(int i = 0; i < QUEUE_DEPTH; i=i+1) begin
+      for(i = 0; i < STACK_DEPTH; i=i+1) begin
         data_cpu[i] <= '0;
         pointers[i] <= i;
       end
@@ -108,10 +105,10 @@ module hwpf_stack
         // the last pointed-to element.
         if (full) begin
           pointer_t tmp = pointers[0];
-          for(int i = 0; i < QUEUE_DEPTH-1; i=i+1) begin
-            pointers[i] <= pointers[i+ 1];
+          for(int i = 0; i < STACK_DEPTH-1; i=i+1) begin
+            pointers[i] <= pointers[i + 1];
           end
-          pointers[QUEUE_DEPTH-1] <= tmp;
+          pointers[STACK_DEPTH-1] <= tmp;
           data_cpu[tmp] <= val_i;
         end
         else begin
