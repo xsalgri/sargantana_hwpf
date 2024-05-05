@@ -83,7 +83,7 @@ cpu_addr_t                     arbiter_req;
         remove_valid[j] = 1'b0;
         position_to_remove[j] = '0;
 
-        if(take_req_i[j] && data_tid[i] == tid_req_i[j]) begin //request is found a duplicate
+        if(take_req_i[j] && data_tid[i] == cpu_req_i[j].rd) begin //request is found a duplicate
           for(k = 0; k < QUEUE_DEPTH; k = k+1) begin
             if(pointer_queue[k] == i) begin
               remove_valid[j] = 1'b1;
