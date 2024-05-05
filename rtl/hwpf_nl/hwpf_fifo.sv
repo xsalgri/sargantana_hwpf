@@ -28,7 +28,6 @@ module hwpf_fifo
 
     // CPU request issued
     input logic                           take_req_i          [INSERTS-1:0],
-    input logic [6:0]                     tid_req_i           [INSERTS-1:0],
     input cpu_addr_t                      cpu_req_i           [INSERTS-1:0],
 
     // Read oldest element
