@@ -13,7 +13,8 @@ module hwpf_fifo
 #(
     integer LANE_SIZE = 64, // Size of the cache line
     integer QUEUE_DEPTH = 8, // Number of positions in queue
-    type cpu_addr_t = req_cpu_dcache_t // Type of the structure to be used
+    type cpu_addr_t = req_cpu_dcache_t, // Type of the structure to be used
+    integer INSERTS = 2
 )
     //  }}}
     //  Signals
@@ -26,22 +27,19 @@ module hwpf_fifo
     input  logic                          lock_i,
 
     // CPU request issued
-    input logic take_req_i,
-    input logic [6:0] tid_req_i,
-    input cpu_addr_t                      cpu_req_i,
+    input logic                           take_req_i          [INSERTS-1:0],
+    input logic [6:0]                     tid_req_i           [INSERTS-1:0],
+    input cpu_addr_t                      cpu_req_i           [INSERTS-1:0],
 
     // Read oldest element
     input logic read_i,
 
-    // Remove arbitrary element from queue by tid
-    input logic remove_element_i,
-    input logic [6:0] tid_remove_element_i,
-
     // Requests emitted by the prefetcher
+    output logic                          req_hits_o          [INSERTS-1:0],
     output logic                          arbiter_req_valid_o,
     output cpu_addr_t                     arbiter_req_o
 );
-int i, j;
+int i, j, k;
 
 
 //Fields of non-shifting queue
@@ -50,27 +48,29 @@ cpu_addr_t                      data_cpu    [QUEUE_DEPTH-1:0];
 logic [6:0]                     data_tid    [QUEUE_DEPTH-1:0];
 
 //Fields of shifting queue
-logic [$log2(QUEUE_DEPTH)-1:0]  pointer_queue [QUEUE_DEPTH-1:0];
+logic [$clog2(QUEUE_DEPTH)-1:0]  pointer_queue [QUEUE_DEPTH-1:0];
 logic                           pointer_valid [QUEUE_DEPTH-1:0];
 
 //Queue management data
-logic [$log2(QUEUE_DEPTH)-1:0]  last_in_queue;
+logic [$clog2(QUEUE_DEPTH)-1:0]  last_in_queue;
 logic                           queue_contains_something;
 logic                           queue_is_full;
 
-logic [$log2(QUEUE_DEPTH)-1:0] first_empty_slot_pointer;
-logic [$log2(QUEUE_DEPTH)-1:0] queue_head_data_idx;
-logic [$log2(QUEUE_DEPTH)-1:0] position_to_remove;
+logic [$clog2(QUEUE_DEPTH)-1:0] first_empty_slot_pointer      [INSERTS-1:0];
+logic [$clog2(QUEUE_DEPTH)-1:0] queue_head_data_idx;
+logic [$clog2(QUEUE_DEPTH)-1:0] position_to_remove            [INSERTS-1:0];
+logic                           remove_valid                  [INSERTS-1:0];
 
 logic                          arbiter_req_valid;
 cpu_addr_t                     arbiter_req;
 
   //Find first empty slot for when next valid petition arrives
   always_comb begin
+    j = 0;
     for(i = 0; i < QUEUE_DEPTH; i = i+1) begin
-      if(data_cpu[i].valid) begin
-        first_empty_slot_pointer = i;
-        break;
+      if(data_cpu[i].valid && j < INSERTS) begin
+        first_empty_slot_pointer[j] = i;
+        j = j+1;
       end
     end
   end
@@ -79,15 +79,23 @@ cpu_addr_t                     arbiter_req;
   always_comb 
   begin
     for(i = 0; i < QUEUE_DEPTH; i = i+1) begin
-      if(remove_element_i && data_tid[i] == tid_remove_element_i) begin
-        for(j = 0; j < QUEUE_DEPTH; j = j+1) begin
-          if(pointer_queue[j] == i) begin
-            position_to_remove = j;
+      for(j = 0; j < INSERTS; j = j+1) begin
+        remove_valid[j] = 1'b0;
+        position_to_remove[j] = '0;
+
+        if(take_req_i[j] && data_tid[i] == tid_req_i[j]) begin //request is found a duplicate
+          for(k = 0; k < QUEUE_DEPTH; k = k+1) begin
+            if(pointer_queue[k] == i) begin
+              remove_valid[j] = 1'b1;
+              position_to_remove[j] = k;
+            end
           end
         end
       end
     end
   end
+
+
   //Sets queue as full when pointer to last points to last position in queue
   assign queue_is_full = (last_in_queue == QUEUE_DEPTH-1);
 
@@ -141,20 +149,34 @@ cpu_addr_t                     arbiter_req;
             arbiter_req <= data_cpu[queue_head_data_idx];
               
             //Remove Outputting element
-            data_valid[pointer_queue[0]] <= 1'b0;
-            for(i = 0; i < QUEUE_DEPTH; i = i+1) begin
-              //Remove arbitrary element from queue
-              if(remove_element_i && position_to_remove == i+displacement) begin
-                displacement = displacement + 1;
-                data_valid[i+displacement] <= 1'b0;
-              end
-              //Displace all elements right within queue
-              if(i <= last_in_queue) begin
-                pointer_queue[i] <= (i+displacement < QUEUE_DEPTH) ? pointer_queue[i+displacement] : '0;
-                pointer_valid[i] <= (i+displacement < QUEUE_DEPTH) ? pointer_valid[i+displacement] : '0;
-              end
+            data_valid[queue_head_data_idx] <= 1'b0;
+            pointer_valid[0] <= 1'b0;
+          end
+
+          //Remove arbitrary element from queue
+          for(i = 0; i < INSERTS; i = i+1) begin
+            if(remove_valid) begin
+              displacement = displacement + 1;
+              data_valid[pointer_queue[position_to_remove[i]]] <= 1'b0;
+              pointer_valid[position_to_remove[i]] <= 1'b0;
             end
           end
+
+          //Displace all elements right within queue
+          for(i = 0; i < QUEUE_DEPTH; i = i+1) begin
+            int local_displacement;
+            local_displacement = 0;
+
+            if(!pointer_valid[i]) begin
+              local_displacement = local_displacement + 1;
+            end
+
+            if(i <= last_in_queue) begin
+              pointer_queue[i] <= (i+local_displacement < QUEUE_DEPTH) ? pointer_queue[i+local_displacement] : '0;
+              pointer_valid[i] <= (i+local_displacement < QUEUE_DEPTH) ? pointer_valid[i+local_displacement] : '0;
+            end
+          end
+
           //Insert element to last position
           //Note: If queue overflows data will be lost
           if(take_req_i && (last_in_queue-displacement+1 < QUEUE_DEPTH)) begin
@@ -180,5 +202,7 @@ cpu_addr_t                     arbiter_req;
   //Output assignments
   assign arbiter_req_valid_o = arbiter_req_valid;
   assign arbiter_req_o = arbiter_req;
+
+  assign req_hits_o = remove_valid;
 
 endmodule
