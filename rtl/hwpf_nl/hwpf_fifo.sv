@@ -4,8 +4,7 @@
  *  Description   : Next line prefetcher for the Sargantana processor
  *  History       :
  */
-import drac_pkg::*;
-import hpdcache_pkg::*;
+import drac_pkg::addr_t;
 
 module hwpf_fifo
     //  Parameters
@@ -13,7 +12,7 @@ module hwpf_fifo
 #(
     integer LANE_SIZE = 64, // Size of the cache line
     integer QUEUE_DEPTH = 8, // Number of positions in queue
-    type cpu_addr_t = req_cpu_dcache_t, // Type of the structure to be used
+    type cpu_addr_t = addr_t, // Type of the structure to be used
     integer INSERTS = 2
 )
     //  }}}
@@ -28,14 +27,15 @@ module hwpf_fifo
 
     // CPU request issued
     input logic                           take_req_i          [INSERTS-1:0],
-    input logic [6:0]                     tid_req_i           [INSERTS-1:0],
     input cpu_addr_t                      cpu_req_i           [INSERTS-1:0],
 
-    // Read oldest element
-    input logic read_i,
 
     // Requests emitted by the prefetcher
     output logic                          req_hits_o          [INSERTS-1:0],
+
+    // Used only for testing. These are not used in the control logic.
+    // Read oldest element
+    input logic read_i,
     output logic                          arbiter_req_valid_o,
     output cpu_addr_t                     arbiter_req_o
 );
@@ -76,7 +76,7 @@ cpu_addr_t                     arbiter_req;
   end
 
   //Find pointer to pointer to data with tid to remove
-  always_comb 
+  always_comb
   begin
     for(i = 0; i < QUEUE_DEPTH; i = i+1) begin
       for(j = 0; j < INSERTS; j = j+1) begin
@@ -103,7 +103,7 @@ cpu_addr_t                     arbiter_req;
   assign queue_head_data_idx = (queue_contains_something) ? pointer_queue[0] : '0;
 
   //Queue read/writes
-  always@(posedge clk_i, negedge rst_ni) 
+  always@(posedge clk_i, negedge rst_ni)
   begin
     int displacement;
     displacement = 0;
@@ -147,7 +147,7 @@ cpu_addr_t                     arbiter_req;
             //Set queue outputting
             arbiter_req_valid <= data_cpu[queue_head_data_idx].valid;
             arbiter_req <= data_cpu[queue_head_data_idx];
-              
+
             //Remove Outputting element
             data_valid[queue_head_data_idx] <= 1'b0;
             pointer_valid[0] <= 1'b0;

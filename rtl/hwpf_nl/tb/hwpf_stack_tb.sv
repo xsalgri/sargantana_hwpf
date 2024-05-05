@@ -48,6 +48,9 @@ module hwpf_stack_tb
     );
 
 initial begin
+    $dumpfile("./wave_hwpf_stack_tb.vcd");
+    $dumpvars;
+
     rst <= 1'b0;
     clk <= 1'b0;
     flush <= 1'b0;
@@ -187,6 +190,21 @@ initial begin
     #10;
     CheckUnderflowValid4: assert (stack_valid_o == 1'b0);
       else $error("Assertion CheckUnderflowValid4 failed!");
+
+    $display("Check flush");
+    stack_push_i <= 1'b1;
+    stack_val_i <= 40'hCAFE0009;
+    stack_expected_req <= stack_val_i;
+    #10;
+    CheckFlushValid1: assert (stack_valid_o == 1'b1);
+      else $error("Assertion CheckFlushValid1 failed!");
+    CheckFlushValue1: assert (stack_req_o == stack_expected_req);
+      else $error("Assertion CheckFlushValue1 failed! %h expected %h", stack_req_o, stack_expected_req);
+    flush <= 1'b1;
+    #10;
+    CheckFlushValid2: assert (stack_valid_o == 1'b0);
+      else $error("Assertion CheckFlushValid2 failed!");
+    flush <= 1'b0;
 
     $finish;
 end
