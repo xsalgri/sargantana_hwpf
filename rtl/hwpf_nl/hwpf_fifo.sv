@@ -178,15 +178,16 @@ cpu_addr_t                     arbiter_req;
 
           //Insert element to last position
           //Note: If queue overflows data will be lost
-          if(take_req_i && (last_in_queue-displacement+1 < QUEUE_DEPTH)) begin
-            pointer_queue[i] <= first_empty_slot_pointer;
-            pointer_valid[i] <= take_req_i;
+          for(i = 0; i < INSERTS; i = i+1) begin
+            if(take_req_i[i] && (last_in_queue-displacement+1 < QUEUE_DEPTH)) begin
+              pointer_queue[last_in_queue-displacement+1] <= first_empty_slot_pointer[i];
+              pointer_valid[last_in_queue-displacement+1] <= take_req_i;
 
-            data_valid[i] <= 1'b1;
-            data_cpu[i] <= cpu_req_i;
-            data_tid[i] <= cpu_req_i.rd;
+              data_valid[first_empty_slot_pointer[i]] <= 1'b1;
+              data_cpu[first_empty_slot_pointer[i]] <= cpu_req_i;
 
-            displacement = displacement - 1;
+              displacement = displacement - 1;
+            end
           end
 
           //Update pointer to last position
