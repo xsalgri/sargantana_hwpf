@@ -1,36 +1,43 @@
 
-import drac_pkg::*;
-import hpdcache_pkg::*;
+import drac_pkg::addr_t;
 
 module hwpf_fifo_tb (
 );
     int i;
     localparam INSERTS = 2;
+    localparam QUEUE_DEPTH = 3;
     logic clk;
     logic rst;
 
     logic flush;
     logic lock;
 
-    req_cpu_dcache_t cpu_req;
-    req_cpu_dcache_t cpu_req2;
-    logic arbiter_req_ready;
+    logic fifo_take_req_i [INSERTS-1:0];
+    addr_t fifo_cpu_req_i [INSERTS-1:0];
 
-    logic req_valid [INSERTS-1:0];
-    req_cpu_dcache_t cpu_reqs [INSERTS-1:0];
+    addr_t                      fifo_data_cpu_o    [QUEUE_DEPTH-1:0];
+    logic                       fifo_data_valid_o    [QUEUE_DEPTH-1:0];
 
-    logic req_valid;
-    req_cpu_dcache_t req_arb;
+    function automatic logic findDataImpl;
+    input addr_t                      data_cpu    [QUEUE_DEPTH-1:0];
+    input logic                       data_valid  [QUEUE_DEPTH-1:0];
+    input addr_t                      cpu_req_i;
+    begin
+        for (int j = 0; j < QUEUE_DEPTH; j = j+1) begin
+        if (data_valid[j] && cpu_req_i == data_cpu[j]) begin
+            return '1;
+        end
+        end
+    end
+    return '0;
+    endfunction
 
-    logic req_hits [INSERTS-1:0];
+    `define findData(x) findDataImpl(fifo_data_cpu_o, fifo_data_valid_o, x)
 
-    assign req_valid[0] = cpu_req.valid;
-    assign req_valid[1] = cpu_req2.valid;
-
-    assign cpu_reqs[0] = cpu_req;
-    assign cpu_reqs[1] = cpu_req2;
-
-   hwpf_fifo fifo
+   hwpf_fifo #(
+    .QUEUE_DEPTH(QUEUE_DEPTH),
+    .INSERTS(INSERTS)
+   ) fifo
    (
     .clk_i(clk),
     .rst_ni(rst),
@@ -39,179 +46,104 @@ module hwpf_fifo_tb (
     .lock_i(lock),
 
     // CPU request issued
-    .take_req_i(cpu_req.valid),
-    .cpu_req_i(cpu_req),
-
-    // Read oldest element
-    .read_i(arbiter_req_ready),
-
-    // Requests emitted by the prefetcher
-    .arbiter_req_valid_o(req_valid),
-    .arbiter_req_o(req_arb),
-
-    .req_hits_o(req_hits)
+    .take_req_i(fifo_take_req_i),
+    .cpu_req_i(fifo_cpu_req_i),
+    .data_cpu_o(fifo_data_cpu_o),
+    .data_valid_o(fifo_data_valid_o)
 );
 
 //Main tb signal driver
 initial begin
+    $dumpfile("./wave_hwpf_fifo_tb.vcd");
+    $dumpvars;
     //General control Signals
-    rst <= 1'b0;
-    clk <= 1'b0;
-    flush <= 1'b0;
-    lock <= 1'b0;
+    rst = 1'b0;
+    clk = 1'b0;
+    flush = 1'b0;
+    lock = 1'b0;
 
     //Module-specific control signals
-    cpu_req <= '0;
-    cpu_req2 <= '0;
-    arbiter_req_ready <= 1'b0;
+    fifo_take_req_i[0] = '0;
+    fifo_cpu_req_i[0] = '0;
+    fifo_take_req_i[1] = '0;
+    fifo_cpu_req_i[1] = '0;
 
     #20;
-    rst <= ~rst;
-
-    #30;
-    lock <= 1'b1; //Disable Queue lock
-    //Req Data when empty
-    arbiter_req_ready <= 1'b1;
-    CheckInitState: assert(req_arb == '0);
-    else $error("Assertion CheckInitStateV failed!");
-    CheckInitState: assert(req_valid == '0);
-    else $error("Assertion CheckInitStateD failed!");
-
+    rst = ~rst;
     #20;
-    //Insert one data
-    arbiter_req_ready <= 1'b0;
-    cpu_req.valid <= 1'b1;
-    cpu_req.rd <= 7'h1;
-    cpu_req.data_rs1 <= 64'hCAFECAFE;
+    $display("Starting test");
+    CheckInitState: assert (!`findData(fifo_cpu_req_i[0]) && !`findData(fifo_cpu_req_i[1]));
+      else $error("Assertion CheckInitState failed!");
 
+    $display("Check lock");
+    lock = 1'b1;
+    fifo_cpu_req_i[0] = 40'hCAFE0000;
+    fifo_take_req_i[0] = 1'b1;
+    CheckLock1: assert (`findData(fifo_cpu_req_i[0])== 0);
+      else $error("Assertion CheckLock1 failed!");
     #10;
-    //Retrieve one data
-    cpu_req <= '0;
-    arbiter_req_ready <= 1'b1;
-    CheckAssign: assert(req_valid == 1'b1);
-    else $error("Assertion CheckAssign1V failed!");
-    CheckAssign: assert(req_arb.data_rs1 == 64'hCAFECAFE && req_arb.rd == 7'h1);
-    else $error("Assertion CheckAssign1D failed!");
+    CheckLock2: assert (`findData(fifo_cpu_req_i[0]) == 0);
+      else $error("Assertion CheckLock2 failed!");
 
-    #10;
-    arbiter_req_ready <= 1'b0;
-    cpu_req.valid <= 1'b1;
-    cpu_req.rd <= 7'h2;
-    cpu_req.data_rs1 <= 64'h1BEEF;
-    #10;
-    //Insert and retrieve one data simultaneously
-    arbiter_req_ready <= 1'b1;
-    cpu_req.valid <= 1'b1;
-    cpu_req.rd <= 7'h3;
-    cpu_req.data_rs1 <= 64'hC0DE1111;
+    $display("Check simple insertion");
+    lock = 1'b0;
+    fifo_cpu_req_i[0] = 40'hCAFE0000;
+    fifo_take_req_i[0] = 1'b1;
+    SimpleInsertion1: assert (`findData(fifo_cpu_req_i[0]) == 0);
+    else $error("Assertion SimpleInsertion1 failed!");
+    #10
+    SimpleInsertion2: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion SimpleInsertion2 failed!");
+    fifo_take_req_i[0] = 1'b0;
+    #10
 
-    assert(req_valid == 1'b1);
-    else $error("Assertion CheckAssign2V failed!");
-    assert(req_arb.data_rs1 == 64'h1BEEF && req_arb.rd == 7'h2);
-    else $error("Assertion CheckAssign2D failed!");
+    $display("Check flush");
+    flush = 1'b1;
+    #10
+    CheckFlush1: assert (`findData(fifo_cpu_req_i[0]) == 0);
+    else $error("Assertion CheckFlush1 failed!");
+    fifo_take_req_i[0] = 1'b1;
+    fifo_cpu_req_i[0] = 40'hCAFE0000;
+    #10
+    CheckFlush2: assert (`findData(fifo_cpu_req_i[0]) == 0);
+    else $error("Assertion CheckFlush2 failed!");
+    fifo_take_req_i[0] = 1'b0;
+    flush = 1'b0;
 
-    #10;
-    //Now queue is empty
-    //Fill queue
-    arbiter_req_ready <= 1'b0;
-    for(i = 0; i < 8+2; i = i+1) begin
-        cpu_req.valid <= 1'b1;
-        cpu_req.rd <= i;
-        cpu_req.data <= {32'hDEADBEEF, i[31:0]};
-        #10;
-    end
+    $display("Check multiple insertions");
+    fifo_cpu_req_i[0] = 40'hCAFE0000;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_cpu_req_i[1] = 40'hCAFE0001;
+    fifo_take_req_i[1] = 1'b1;
+    #10
+    MultipleInsertions1: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion MultipleInsertions1 failed!");
+    MultipleInsertions2: assert (`findData(fifo_cpu_req_i[1]) == 1);
+    else $error("Assertion MultipleInsertions2 failed!");
+    fifo_cpu_req_i[0] = 40'hCAFE0002;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_take_req_i[1] = 1'b0;
+    #10
+    MultipleInsertions3: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion MultipleInsertions3 failed!");
+    MultipleInsertions4: assert (`findData(40'hCAFE0000) == 1);
+    else $error("Assertion MultipleInsertions4 failed!");
+    MultipleInsertions5: assert (`findData(40'hCAFE0001) == 1);
+    else $error("Assertion MultipleInsertions5 failed!");
+    $display("Check inserting already exisiting data");
+    fifo_cpu_req_i[0] = 40'hCAFE0000;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_cpu_req_i[1] = 40'hCAFE0001;
+    fifo_take_req_i[1] = 1'b1;
+    #10
+    MultipleInsertions6: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion MultipleInsertions6 failed!");
+    MultipleInsertions7: assert (`findData(fifo_cpu_req_i[1]) == 1);
+    else $error("Assertion MultipleInsertions7 failed!");
+    MultipleInsertions8: assert (`findData(40'hCAFE0002) == 1);
+    else $error("Assertion MultipleInsertions8 failed!");
 
-    //Now queue is full and has lost rd 8 and 9 (intended)!
-    cpu_req <= '0;
-    arbiter_req_ready <= 1'b1;
-    for(i = 0; i < 8; i = i+1) begin
-        assert(req_valid == 1'b1);
-        else $error("Assertion CheckAssign3V failed!");
-        assert(req_arb.data_rs1 == {32'hDEADBEEF, i[31:0]} && req_arb.rd == i);
-        else $error("Assertion CheckAssign3D failed!");
-        #10;
-    end
-    //Now queue is empty!
-
-    //check overflow is lost
-    arbiter_req_ready <= 1'b0;
-    assert(req_valid == 1'b0);
-        else $error("Assertion CheckEmptyV failed!");
-    assert(req_arb <= '0);
-        else $error("Assertion CheckEmptyD failed!");
-    #20;
-
-    //Fill queue and remove element 2
-    arbiter_req_ready <= 1'b0;
-    for(i = 0; i < 8; i = i+1) begin
-        cpu_req.valid <= 1'b1;
-        cpu_req.rd <= i;
-        cpu_req.data <= {32'hDEADBEEF, i[31:0]};
-        #10;
-    end
-
-    arbiter_req_ready <= 1'b1;
-    //Check flush!
-    flush <= 1'b1;
-    #10;
-    //Now queue should be empty!
-    assert(req_arb.valid == 1'b0);
-        else $error("Assertion CheckEmptyV failed!");
-
-
-    //Check double assign and order
-    #10;
-    arbiter_req_ready <= 1'b1;
-    cpu_req.valid <= 1'b1;
-    cpu_req.rd <= 6'h10;
-    cpu_req.data <= 64'hC01ACA0;
-
-    cpu_req2.valid <= 1'b1;
-    cpu_req2.rd <= 6'h12;
-    cpu_req2.data <= 64'h31337;
-
-    #10;
-    cpu_req <= '0;
-    cpu_req2 <= '0;
-    assert(req_arb.valid == 1'b1);
-        else $error("Assertion CheckDoubleAssign1V failed!");
-    assert(req_arb.data = 64'hC01ACA0);
-        else $error("Assertion CheckDoubleAssign1D failed!");
-    #10;
-    assert(req_arb.valid == 1'b1);
-        else $error("Assertion CheckDoubleAssign2V failed!");
-    assert(req_arb.data = 64'h31337);
-        else $error("Assertion CheckDoubleAssign2D failed!");
-    arbiter_req_ready <= 1'b0;
-    #30;
-
-    //check assign reordering
-    cpu_req.valid <= 1'b1;
-    cpu_req.rd <= 6'h8;
-    cpu_req.data <= 64'hBEEFA;
-
-    cpu_req2.valid <= 1'b1;
-    cpu_req2.rd <= 6'h9;
-    cpu_req2.data <= 64'hDEADCAFE;
-
-    #10;
-
-    cpu_req.valid <= 1'b1;
-    cpu_req.rd <= 6'h8;
-    cpu_req.data <= 64'hDEADDEAD;
-    arbiter_req_ready <= 1'b1;
-    #10;
-    assert(req_arb.valid == 1'b1);
-        else $error("Assertion CheckReorder1V failed!");
-    assert(req_arb.data = 64'hDEADCAFE);
-        else $error("Assertion CheckReorder1D failed!");
-    #10;
-    assert(req_arb.valid == 1'b1);
-        else $error("Assertion CheckReorder2V failed!");
-    assert(req_arb.data = 64'hDEADDEAD);
-        else $error("Assertion CheckReorder2D failed!");
-
-    //Basic cases should be covered. Expect edge cases!
+    //Basic cases should be covered.
     $finish;
 end
 

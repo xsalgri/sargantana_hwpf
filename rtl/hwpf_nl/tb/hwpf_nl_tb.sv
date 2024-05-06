@@ -22,10 +22,6 @@ module hwpf_nl_tb
     logic                          nl_arbiter_req_valid_o;
     hpdcache_req_t                 nl_arbiter_req_o;
 
-    // local variables
-    hpdcache_req_t expected_req;
-    logic expected_valid;
-
 
     hwpf_nl nl (
         .clk_i(clk),
@@ -189,7 +185,7 @@ initial begin
 
     nl_arbiter_req_ready_i <= 1'b1;
     nl_cpu_req_i.valid <= 1'b1;
-    nl_cpu_req_i.io_base_addr <= 40'hCAFE0040;
+    nl_cpu_req_i.io_base_addr <= 40'hCAFE0080;
     nl_cpu_req_i.rd <= 6;
     #10;
     nl_cpu_req_i.valid <= 1'b0;

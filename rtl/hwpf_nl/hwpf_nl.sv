@@ -31,6 +31,7 @@ module hwpf_nl
     input  logic                          arbiter_req_ready_i,
     output hpdcache_req_t                 arbiter_req_o
 );
+    localparam QUEUE_DEPTH = 8;
     // }}}
     // Local signals
     int i;
@@ -42,11 +43,7 @@ module hwpf_nl
     // Data of the line being fed from the CPU
     // Keep the same size for now
     typedef addr_t cpu_addr_t;
-    cpu_addr_t cpu_addr;
 
-    // Next lane being sent to the queue
-    logic insert_queue;
-    cpu_addr_t insert_value_queue;
     // }}}
 
     // Stack instance
@@ -75,11 +72,31 @@ module hwpf_nl
         .req_o(stack_req_o)
     );
 
-    logic fifo_push_i[2];
-    cpu_addr_t fifo_req_i[2];
-    logic fifo_hits_o[2];
+    logic fifo_push_i[1:0];
+    cpu_addr_t fifo_req_i[1:0];
 
-    hwpf_fifo fifo(
+    addr_t                      fifo_data_cpu_o    [QUEUE_DEPTH-1:0];
+    logic                       fifo_data_valid_o    [QUEUE_DEPTH-1:0];
+
+    function automatic logic findDataImpl;
+    input addr_t                      data_cpu    [QUEUE_DEPTH-1:0];
+    input logic                       data_valid  [QUEUE_DEPTH-1:0];
+    input addr_t                      cpu_req_i;
+    begin
+        for (int j = 0; j < QUEUE_DEPTH; j = j+1) begin
+        if (data_valid[j] && cpu_req_i == data_cpu[j]) begin
+            return '1;
+        end
+        end
+    end
+    return '0;
+    endfunction
+
+    `define findData(x) findDataImpl(fifo_data_cpu_o, fifo_data_valid_o, x)
+
+    hwpf_fifo #(
+        .QUEUE_DEPTH(QUEUE_DEPTH)
+    ) fifo(
         .clk_i(clk_i),
         .rst_ni(rst_ni),
         .flush_i(flush_i),
@@ -90,12 +107,8 @@ module hwpf_nl
         .cpu_req_i(fifo_req_i),
 
         // Requests emitted by the prefetcher
-        .req_hits_o(fifo_hits_o),
-
-        // UNEEDED
-        .read_i(1'b0),
-        .arbiter_req_valid_o(),
-        .arbiter_req_o()
+        .data_cpu_o(fifo_data_cpu_o),
+        .data_valid_o(fifo_data_valid_o)
     );
     // }}}
 
@@ -104,12 +117,6 @@ module hwpf_nl
     assign arbiter_req_o.sid = '0;
     assign arbiter_req_o.tid = '0;
     assign arbiter_req_o.need_rsp = 1'b0;
-
-    // Decide if we have data to send to the arbiter.
-    // We will try to send the latest value that would have been
-    // inserted into the queue if available.
-    assign arbiter_req_valid_o = ~lock_i && (stack_valid_o || insert_queue);
-    assign arbiter_req_o.addr = insert_queue ? insert_value_queue : stack_req_o;
 
     function logic cpu_feed_res(req_cpu_dcache_t cpu_req_i, logic lock_i, ref tid_t tid_q);
         if (tid_q != cpu_req_i.rd) begin
@@ -123,6 +130,13 @@ module hwpf_nl
 
     always@(posedge clk_i, negedge rst_ni) begin
       logic cpu_feed;
+      // Next lane being sent to the queue
+      logic insert_queue = 1'b0;
+      cpu_addr_t insert_value_queue;
+
+      fifo_push_i[0] = 1'b0;
+      fifo_push_i[1] = 1'b0;
+      stack_push_i = 1'b0;
 
       if(~rst_ni) begin
         tid_q = '0; // Reset the tid being processed
@@ -134,6 +148,7 @@ module hwpf_nl
 
 
       if (cpu_feed) begin
+        cpu_addr_t cpu_addr;
         // Save the address from the CPU request (do downsizing here if needed, remove lane size bits and top bits)
         integer next_lane_size = LANE_SIZE;
         cpu_addr = cpu_req_i.io_base_addr;
@@ -145,7 +160,7 @@ module hwpf_nl
         // How do I look up the cpu_addr in the FIFO?
 
 
-        if (!fifo_hits_o[0]) begin
+        if (!`findData(cpu_addr)) begin
             // It's the first time we see this new entry;
             // we are going to push it to the FIFO and await another match to start prefetching.
         end
@@ -157,7 +172,7 @@ module hwpf_nl
             fifo_push_i[1] = 1'b1;
             fifo_req_i[1] = next_addr;
 
-            if (!fifo_hits_o[1]) begin
+            if (!`findData(next_addr)) begin
                 // Send this to the list of addresses to prefetch
                 insert_queue = 1'b1;
                 insert_value_queue = next_addr;
@@ -165,18 +180,33 @@ module hwpf_nl
         end
       end
 
+      // Decide if we have data to send to the arbiter.
+      // We will try to send the latest value that would have been
+      // inserted into the queue if available.
       if (~lock_i && insert_queue && arbiter_req_ready_i) begin
         // Skip the queue and send it directly
+        arbiter_req_valid_o = 1'b1;
+        arbiter_req_o.addr = insert_value_queue;
       end
       else if (~lock_i && insert_queue) begin
         // Send the next address in the queue
         stack_val_i = insert_value_queue;
         stack_push_i = 1'b1;
-        insert_queue = 1'b0;
+
+        arbiter_req_o.addr = insert_value_queue;
+        arbiter_req_valid_o = 1'b1;
       end
-      else if (~lock_i && arbiter_req_ready_i) begin
+      else if (~lock_i && arbiter_req_ready_i && stack_valid_o) begin
         // Extract a value from the queue
         stack_pop_i = 1'b1;
+
+        arbiter_req_o.addr = stack_req_o;
+        arbiter_req_valid_o = 1'b1;
+      end else if (~lock_i && stack_valid_o) begin
+        arbiter_req_o.addr = stack_req_o;
+        arbiter_req_valid_o = 1'b1;
+      end else begin
+        arbiter_req_valid_o = 1'b0;
       end
     end
 
