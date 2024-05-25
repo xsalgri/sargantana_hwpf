@@ -142,7 +142,70 @@ initial begin
     else $error("Assertion MultipleInsertions7 failed!");
     MultipleInsertions8: assert (`findData(40'hCAFE0002) == 1);
     else $error("Assertion MultipleInsertions8 failed!");
+    
+    $display("Check overflows");
+    fifo_cpu_req_i[0] = 40'hCAFE0002;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_cpu_req_i[1] = 40'hCAFE0003;
+    fifo_take_req_i[1] = 1'b1;
+    #10
+    OverflowInsertions1: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion OverflowInsertions1 failed!");
+    OverflowInsertions2: assert (`findData(fifo_cpu_req_i[1]) == 1);
+    else $error("Assertion OverflowInsertions2 failed!");
+    OverflowInsertions3: assert (`findData(40'hCAFE0000) == 0);
+    else $error("Assertion OverflowInsertions3 failed!");
+    OverflowInsertions4: assert (`findData(40'hCAFE0001) == 1);
+    else $error("Assertion OverflowInsertions3 failed!");
+    fifo_cpu_req_i[0] = 40'hCAFE0004;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_cpu_req_i[1] = 40'hCAFE0005;
+    fifo_take_req_i[1] = 1'b1;
+    #10
+    OverflowInsertions5: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion OverflowInsertions5 failed!");
+    OverflowInsertions6: assert (`findData(fifo_cpu_req_i[1]) == 1);
+    else $error("Assertion OverflowInsertions6 failed!");
+    OverflowInsertions7: assert (`findData(40'hCAFE0003) == 1);
+    else $error("Assertion OverflowInsertions7 failed!");
+    OverflowInsertions8: assert (`findData(40'hCAFE0000) == 0);
+    else $error("Assertion OverflowInsertions8 failed!");
+    OverflowInsertions9: assert (`findData(40'hCAFE0001) == 0);
+    else $error("Assertion OverflowInsertions9 failed!");
+    OverflowInsertions10: assert (`findData(40'hCAFE0002) == 0);
+    else $error("Assertion OverflowInsertions10 failed!");
+    fifo_cpu_req_i[0] = 40'hCAFE0007;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_take_req_i[1] = 1'b0;
+    #10
+    OverflowInsertions11: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion OverflowInsertions11 failed!");
+    OverflowInsertions12: assert (`findData(40'hCAFE0005) == 1);
+    else $error("Assertion OverflowInsertions12 failed!");
+    OverflowInsertions13: assert (`findData(40'hCAFE0004) == 1);
+    else $error("Assertion OverflowInsertions13 failed!");
+    OverflowInsertions14: assert (`findData(40'hCAFE0003) == 0);
+    else $error("Assertion OverflowInsertions14 failed!");
+    OverflowInsertions15: assert (`findData(40'hCAFE0002) == 0);
+    else $error("Assertion OverflowInsertions15 failed!");
+    OverflowInsertions16: assert (`findData(40'hCAFE0001) == 0);
+    else $error("Assertion OverflowInsertions16 failed!");
+    OverflowInsertions17: assert (`findData(40'hCAFE0000) == 0);
+    else $error("Assertion OverflowInsertions17 failed!");
 
+    $display("Check inserting already exisiting data plus overflow");
+
+    fifo_cpu_req_i[0] = 40'hCAFE0005;
+    fifo_take_req_i[0] = 1'b1;
+    fifo_cpu_req_i[0] = 40'hCAFE0006;
+    fifo_take_req_i[1] = 1'b1;
+    #10
+    OverflowInsertions18: assert (`findData(fifo_cpu_req_i[1]) == 1);
+    else $error("Assertion OverflowInsertions18 failed!");
+    OverflowInsertions19: assert (`findData(fifo_cpu_req_i[0]) == 1);
+    else $error("Assertion OverflowInsertions19 failed!");
+    OverflowInsertions20: assert (`findData(40'hCAFE0007) == 1);
+    else $error("Assertion OverflowInsertions20 failed!");
     //Basic cases should be covered.
     $finish;
 end

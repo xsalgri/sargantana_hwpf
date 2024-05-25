@@ -2,7 +2,7 @@ package sargantana_hpdc_pkg;
 
 import hpdcache_pkg::*;
 
-parameter HPDCACHE_NREQUESTERS = 2;
+parameter HPDCACHE_NREQUESTERS = 3;
 parameter HPDCACHE_MEM_TID_WIDTH = 8;
 parameter HPDCACHE_MEM_WORDS = 8;
 parameter int unsigned HPDCACHE_MEM_DATA_WIDTH = HPDCACHE_MEM_WORDS*HPDCACHE_WORD_WIDTH;

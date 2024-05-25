@@ -10,7 +10,6 @@ module hwpf_fifo
     //  Parameters
     //  {{{
 #(
-    integer LANE_SIZE = 64, // Size of the cache line
     integer QUEUE_DEPTH = 8, // Number of positions in queue
     type cpu_addr_t = addr_t, // Type of the structure to be used
     integer INSERTS = 2
@@ -53,6 +52,13 @@ pointer_t                       start_pointer;
 pointer_inv_t                   queue_pos_to_remove [INSERTS-1:0];
 pointer_inv_t                   rel_pointer_pos_to_remove   [INSERTS-1:0];
 
+// Local data to compute logic of an insertion
+pointer_t max_pos_shift = '0;
+int unsigned displacement = 0;
+int start_pointer_shift = 0;
+pointer_t set_to = '0;
+pointer_t set_from = '0;
+
 //Queue read/writes
 always@(posedge clk_i, negedge rst_ni)
 begin
@@ -82,23 +88,23 @@ begin
   end
   // normal cycle; we have 1 or more pushes
   else begin
-    pointer_t max_pos_shift = '0;
-    int unsigned displacement = 0;
-    int start_pointer_shift = 0;
-    pointer_t set_to = '0;
-    pointer_t set_from = '0;
+    max_pos_shift = '0;
+    displacement = 0;
+    start_pointer_shift = 0;
+    set_to = '0;
+    set_from = '0;
 
     // Find the position to remove
     for (int i = 0; i < INSERTS; i = i+1) begin
-    queue_pos_to_remove[i] = QUEUE_DEPTH;
-    if (take_req_i[i]) begin
-      for (int j = 0; j < QUEUE_DEPTH; j = j+1) begin
-        if (data_valid[j] && cpu_req_i[i] == data_cpu[j]) begin
-          queue_pos_to_remove[i] = j;
+      queue_pos_to_remove[i] = QUEUE_DEPTH;
+      if (take_req_i[i]) begin
+        for (int j = 0; j < QUEUE_DEPTH; j = j+1) begin
+          if (data_valid[j] && cpu_req_i[i] == data_cpu[j]) begin
+            queue_pos_to_remove[i] = j;
+          end
         end
       end
     end
-  end
 
     // Find the pointer to a remove position
     for (int unsigned i = 0; i < INSERTS; i = i+1) begin
@@ -121,12 +127,15 @@ begin
 
     // Move data in queue to the right as many positions as needed to cover the empty slots
     for(int j = max_pos_shift; j >= 0; j = j-1) begin
+      bit is_displaced_entry = '0;
       for (int unsigned i = 0; i < INSERTS; i = i+1) begin
         if (take_req_i[i] && rel_pointer_pos_to_remove[i] == j) begin
           displacement = displacement + 1;
-          continue;
+          is_displaced_entry = '1;
         end
       end
+      if (is_displaced_entry)
+        continue;
       set_from = (start_pointer + j) % QUEUE_DEPTH;
       set_to = (start_pointer + j + displacement) % QUEUE_DEPTH;
       $display("Setting: %d to %d with vaule: %d previously had: %d", set_to, set_from, pointer_queue[set_from], pointer_queue[set_to]);

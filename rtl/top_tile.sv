@@ -439,6 +439,29 @@ dcache_interface dcache_interface_inst(
     .dmem_is_load_o  ( exe_load_pmu  )
 );
 
+hwpf_nl #(
+    .LANE_SIZE(64),   // Size of the cache line
+    .FIFO_DEPTH(8),   // Number of entries in FIFO
+    .STACK_DEPTH(8),  // Number of entries in STACK
+    .DATA_TYPE(addr_t)   // Data type used
+)
+hwpf (
+    .clk_i(clk_i),
+    .rstn_i(rstn_i),
+    
+
+    .flush_i(flush_i),
+    .lock_i(),
+
+    // CPU request issued
+    .cpu_req_i(),
+
+    // Requests emitted by the prefetcher
+    .arbiter_req_valid_o(),
+    .arbiter_req_ready_i(),
+    .arbiter_req_o()
+)
+
 hpdcache #(
     .NREQUESTERS            (HPDCACHE_NREQUESTERS),
     .HPDcacheMemIdWidth     (HPDCACHE_MEM_TID_WIDTH),

@@ -11,7 +11,10 @@ module hwpf_nl
     //  Parameters
     //  {{{
 #(
-    integer LANE_SIZE = 64 // Size of the cache line
+    integer LANE_SIZE = 64,   // Size of the cache line
+    integer FIFO_DEPTH = 8,   // Number of entries in FIFO
+    integer STACK_DEPTH = 8,  // Number of entries in STACK
+    type DATA_TYPE = addr_t   // Data type used
 )
     //  }}}
     //  Signals
@@ -31,7 +34,6 @@ module hwpf_nl
     input  logic                          arbiter_req_ready_i,
     output hpdcache_req_t                 arbiter_req_o
 );
-    localparam QUEUE_DEPTH = 8;
     // }}}
     // Local signals
     int i;
@@ -55,7 +57,13 @@ module hwpf_nl
     logic stack_valid_o;
     cpu_addr_t stack_req_o;
 
-    hwpf_stack stack (
+    hwpf_stack # (
+      .STACK_DEPTH(STACK_DEPTH),
+      .cpu_addr_t(DATA_TYPE)
+    )
+    stack 
+    
+    (
         .clk_i(clk_i),
         .rst_ni(rst_ni),
         .flush_i(flush_i),
@@ -95,7 +103,8 @@ module hwpf_nl
     `define findData(x) findDataImpl(fifo_data_cpu_o, fifo_data_valid_o, x)
 
     hwpf_fifo #(
-        .QUEUE_DEPTH(QUEUE_DEPTH)
+        .QUEUE_DEPTH(QUEUE_DEPTH),
+        .cpu_addr_t(DATA_TYPE)
     ) fifo(
         .clk_i(clk_i),
         .rst_ni(rst_ni),
@@ -151,7 +160,7 @@ module hwpf_nl
         cpu_addr_t cpu_addr;
         // Save the address from the CPU request (do downsizing here if needed, remove lane size bits and top bits)
         integer next_lane_size = LANE_SIZE;
-        cpu_addr = cpu_req_i.io_base_addr;
+        cpu_addr = cpu_req_i.io_base_addr & ~(LANE_SIZE-1);
 
         // We are going to insert the new entry in the FIFO
         fifo_push_i[0] = 1'b1;
