@@ -138,7 +138,6 @@ begin
         continue;
       set_from = (start_pointer + j) % QUEUE_DEPTH;
       set_to = (start_pointer + j + displacement) % QUEUE_DEPTH;
-      $display("Setting: %d to %d with vaule: %d previously had: %d", set_to, set_from, pointer_queue[set_from], pointer_queue[set_to]);
       pointer_queue[set_to] = pointer_queue[set_from];
     end
 
@@ -147,7 +146,6 @@ begin
       if (take_req_i[i] && queue_pos_to_remove[i] != QUEUE_DEPTH) begin
         displacement = displacement - 1;
         set_to = (start_pointer + displacement) % QUEUE_DEPTH;
-        $display("[D: %d] Repointing: %d at pos: %d previously had: %d", displacement, queue_pos_to_remove[i], set_to, pointer_queue[set_to]);
         pointer_queue[set_to] = queue_pos_to_remove[i];
       end
     end
@@ -157,7 +155,6 @@ begin
       if(take_req_i[i] && queue_pos_to_remove[i] == QUEUE_DEPTH) begin
         start_pointer_shift += 1;
         set_to = (start_pointer - start_pointer_shift + QUEUE_DEPTH) % QUEUE_DEPTH;
-        $display("Adding data to queue at: %d pointing at: %d inserting %h vs %h", set_to, pointer_queue[set_to], cpu_req_i[i], data_cpu[pointer_queue[set_to]]);
         data_cpu[pointer_queue[set_to]] = cpu_req_i[i];
         data_valid[pointer_queue[set_to]] = 1'b1;
       end

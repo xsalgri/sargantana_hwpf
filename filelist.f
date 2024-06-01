@@ -3,6 +3,7 @@
 -f ./rtl/dcache/rtl/hpdcache.Flist
 -F ./rtl/icache/filelist.f
 -F ./rtl/mmu/filelist.f
+-F ./rtl/hwpf_nl/filelist.f
 +incdir+./includes
 ./includes/sargantana_hpdc_pkg.sv
 ./rtl/interface_dcache/rtl/dcache_interface.sv

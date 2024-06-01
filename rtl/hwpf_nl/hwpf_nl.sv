@@ -12,9 +12,8 @@ module hwpf_nl
     //  {{{
 #(
     integer LANE_SIZE = 64,   // Size of the cache line
-    integer FIFO_DEPTH = 8,   // Number of entries in FIFO
-    integer STACK_DEPTH = 8,  // Number of entries in STACK
-    type DATA_TYPE = addr_t   // Data type used
+    integer FIFO_DEPTH = 32,   // Number of entries in FIFO
+    integer STACK_DEPTH = 8  // Number of entries in STACK
 )
     //  }}}
     //  Signals
@@ -59,7 +58,7 @@ module hwpf_nl
 
     hwpf_stack # (
       .STACK_DEPTH(STACK_DEPTH),
-      .cpu_addr_t(DATA_TYPE)
+      .cpu_addr_t(cpu_addr_t)
     )
     stack 
     
@@ -83,15 +82,15 @@ module hwpf_nl
     logic fifo_push_i[1:0];
     cpu_addr_t fifo_req_i[1:0];
 
-    addr_t                      fifo_data_cpu_o    [QUEUE_DEPTH-1:0];
-    logic                       fifo_data_valid_o    [QUEUE_DEPTH-1:0];
+    addr_t                      fifo_data_cpu_o    [FIFO_DEPTH-1:0];
+    logic                       fifo_data_valid_o    [FIFO_DEPTH-1:0];
 
     function automatic logic findDataImpl;
-    input addr_t                      data_cpu    [QUEUE_DEPTH-1:0];
-    input logic                       data_valid  [QUEUE_DEPTH-1:0];
+    input addr_t                      data_cpu    [FIFO_DEPTH-1:0];
+    input logic                       data_valid  [FIFO_DEPTH-1:0];
     input addr_t                      cpu_req_i;
     begin
-        for (int j = 0; j < QUEUE_DEPTH; j = j+1) begin
+        for (int j = 0; j < FIFO_DEPTH; j = j+1) begin
         if (data_valid[j] && cpu_req_i == data_cpu[j]) begin
             return '1;
         end
@@ -103,8 +102,8 @@ module hwpf_nl
     `define findData(x) findDataImpl(fifo_data_cpu_o, fifo_data_valid_o, x)
 
     hwpf_fifo #(
-        .QUEUE_DEPTH(QUEUE_DEPTH),
-        .cpu_addr_t(DATA_TYPE)
+        .QUEUE_DEPTH(FIFO_DEPTH),
+        .cpu_addr_t(cpu_addr_t)
     ) fifo(
         .clk_i(clk_i),
         .rst_ni(rst_ni),
@@ -128,9 +127,15 @@ module hwpf_nl
     assign arbiter_req_o.need_rsp = 1'b0;
 
     function logic cpu_feed_res(req_cpu_dcache_t cpu_req_i, logic lock_i, ref tid_t tid_q);
-        if (tid_q != cpu_req_i.rd) begin
+        if (lock_i) begin
+            return 1'b0; // The prefetcher is locked
+        end
+        else if (cpu_req_i.valid == 1'b0) begin
+            return 1'b0; // No valid request
+        end
+        else if (tid_q != cpu_req_i.rd) begin
             tid_q = cpu_req_i.rd; // Assign the new tid being fed
-            return ~lock_i; // If the prefetcher is not locked, it can feed from the CPU request now
+            return 1'b1; // If the prefetcher is not locked, it can feed from the CPU request now
         end
         else begin
             return 1'b0; // We already fetched this line

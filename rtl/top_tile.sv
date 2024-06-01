@@ -439,28 +439,36 @@ dcache_interface dcache_interface_inst(
     .dmem_is_load_o  ( exe_load_pmu  )
 );
 
+logic hwpf_nl_valid;
+logic hwpf_nl_ready;
+hpdcache_req_t hwpf_nl_dcache_req;
 hwpf_nl #(
     .LANE_SIZE(64),   // Size of the cache line
     .FIFO_DEPTH(8),   // Number of entries in FIFO
-    .STACK_DEPTH(8),  // Number of entries in STACK
-    .DATA_TYPE(addr_t)   // Data type used
+    .STACK_DEPTH(8)  // Number of entries in STACK
 )
-hwpf (
+hwpf_nl (
     .clk_i(clk_i),
-    .rstn_i(rstn_i),
+    .rst_ni(rstn_i),
     
 
-    .flush_i(flush_i),
-    .lock_i(),
+    .flush_i(iflush),
+    .lock_i('0),
 
     // CPU request issued
-    .cpu_req_i(),
+    // req_cpu_dcache_t
+    .cpu_req_i(req_datapath_dcache_interface),
 
     // Requests emitted by the prefetcher
-    .arbiter_req_valid_o(),
-    .arbiter_req_ready_i(),
-    .arbiter_req_o()
-)
+    .arbiter_req_valid_o(hwpf_nl_valid),
+    .arbiter_req_ready_i(hwpf_nl_ready),
+    .arbiter_req_o(hwpf_nl_dcache_req)
+);
+
+// Connect cache to hwpf
+assign dcache_req_valid[2] = hwpf_nl_valid;
+assign hwpf_nl_ready = dcache_req_ready[2];
+assign dcache_req[2] = hwpf_nl_dcache_req;
 
 hpdcache #(
     .NREQUESTERS            (HPDCACHE_NREQUESTERS),
