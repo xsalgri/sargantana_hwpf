@@ -85,18 +85,33 @@ module hwpf_nl
     addr_t                      fifo_data_cpu_o    [FIFO_DEPTH-1:0];
     logic                       fifo_data_valid_o    [FIFO_DEPTH-1:0];
 
-    function automatic logic findDataImpl;
+    typedef struct packed {
+        addr_t                      fifo_entry;
+        logic                       matches_lane;
+        logic                       matches_petition;
+    } fifo_search_result_t;
+
+    /**
+     * Returns two booleans, one for matching a lane, and one for matching the exact petition in the fifo.
+     */
+    function automatic fifo_search_result_t findDataImpl;
     input addr_t                      data_cpu    [FIFO_DEPTH-1:0];
     input logic                       data_valid  [FIFO_DEPTH-1:0];
     input addr_t                      cpu_req_i;
     begin
+        fifo_search_result_t result;
         for (int j = 0; j < FIFO_DEPTH; j = j+1) begin
-        if (data_valid[j] && cpu_req_i == data_cpu[j]) begin
-            return '1;
+          if (data_valid[j] && cpu_req_i[$size(addr_t):$clog2(LANE_SIZE)] == data_cpu[j][$size(addr_t):$clog2(LANE_SIZE)]) begin
+              result.fifo_entry = data_cpu[j];
+              result.matches_lane = 1'b1;
+              result.matches_petition = cpu_req_i[$clog2(LANE_SIZE)-1:0] == data_cpu[j][$clog2(LANE_SIZE)-1:0];
+              return result;
+          end
         end
-        end
+        result.matches_lane = 1'b0;
+        result.matches_petition = 1'b0;
+        return result;
     end
-    return '0;
     endfunction
 
     `define findData(x) findDataImpl(fifo_data_cpu_o, fifo_data_valid_o, x)
@@ -147,6 +162,8 @@ module hwpf_nl
       // Next lane being sent to the queue
       logic insert_queue = 1'b0;
       cpu_addr_t insert_value_queue;
+      fifo_search_result_t firstSearchResult;
+      cpu_addr_t next_addr;
 
       fifo_push_i[0] = 1'b0;
       fifo_push_i[1] = 1'b0;
@@ -165,32 +182,41 @@ module hwpf_nl
         cpu_addr_t cpu_addr;
         // Save the address from the CPU request (do downsizing here if needed, remove lane size bits and top bits)
         integer next_lane_size = LANE_SIZE;
-        cpu_addr = cpu_req_i.io_base_addr & ~(LANE_SIZE-1);
-
+        cpu_addr = cpu_req_i.data_rs1 & ~(LANE_SIZE-1);
+        firstSearchResult = `findData(cpu_req_i.data_rs1);
         // We are going to insert the new entry in the FIFO
         fifo_push_i[0] = 1'b1;
         fifo_req_i[0] = cpu_addr;
 
-        // How do I look up the cpu_addr in the FIFO?
+        if (firstSearchResult.matches_petition) begin
+          // We have petitioned this exact lane, we are putting back the same entry to preserve it in the FIFO.
+          // We are not prefetching, as we don't see a a stride going on.
+          fifo_push_i[0] = 1'b1;
+          fifo_req_i[0] = cpu_addr;
+        end
+        else if (firstSearchResult.matches_lane) begin
+          // Match! Refresh the entry in the FIFO
+          fifo_push_i[0] = 1'b1;
+          fifo_req_i[0] = firstSearchResult.fifo_entry;
 
+          // Now lets see if we had already prefetched the next line
+          next_addr = cpu_addr+next_lane_size;
 
-        if (!`findData(cpu_addr)) begin
-            // It's the first time we see this new entry;
-            // we are going to push it to the FIFO and await another match to start prefetching.
+          // We are also going to push this entry into the FIFO
+          fifo_push_i[1] = 1'b1;
+          fifo_req_i[1] = next_addr;
+
+          if (!`findData(next_addr)) begin
+              // Send this to the list of addresses to prefetch
+              insert_queue = 1'b1;
+              insert_value_queue = next_addr;
+          end
         end
         else begin
-            // Match! Now lets see if we had already prefetched the next line
-            cpu_addr_t next_addr = cpu_addr+next_lane_size;
-
-            // We are also going to push this entry into the FIFO
-            fifo_push_i[1] = 1'b1;
-            fifo_req_i[1] = next_addr;
-
-            if (!`findData(next_addr)) begin
-                // Send this to the list of addresses to prefetch
-                insert_queue = 1'b1;
-                insert_value_queue = next_addr;
-            end
+          // It's the first time we see this new entry;
+          // we are going to push it to the FIFO and await another match to start prefetching.
+          fifo_push_i[0] = 1'b1;
+          fifo_req_i[0] = cpu_addr;
         end
       end
 
@@ -201,11 +227,13 @@ module hwpf_nl
         // Skip the queue and send it directly
         arbiter_req_valid_o = 1'b1;
         arbiter_req_o.addr = insert_value_queue;
+        stack_pop_i = 1'b0;
       end
       else if (~lock_i && insert_queue) begin
         // Send the next address in the queue
         stack_val_i = insert_value_queue;
         stack_push_i = 1'b1;
+        stack_pop_i = 1'b0;
 
         arbiter_req_o.addr = insert_value_queue;
         arbiter_req_valid_o = 1'b1;
@@ -219,8 +247,10 @@ module hwpf_nl
       end else if (~lock_i && stack_valid_o) begin
         arbiter_req_o.addr = stack_req_o;
         arbiter_req_valid_o = 1'b1;
+        stack_pop_i = 1'b0;
       end else begin
         arbiter_req_valid_o = 1'b0;
+        stack_pop_i = 1'b0;
       end
     end
 
