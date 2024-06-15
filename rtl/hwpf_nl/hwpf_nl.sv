@@ -101,7 +101,7 @@ module hwpf_nl
     begin
         fifo_search_result_t result;
         for (int j = 0; j < FIFO_DEPTH; j = j+1) begin
-          if (data_valid[j] && cpu_req_i[$size(addr_t):$clog2(LANE_SIZE)] == data_cpu[j][$size(addr_t):$clog2(LANE_SIZE)]) begin
+          if (data_valid[j] && cpu_req_i[$size(addr_t)-1:$clog2(LANE_SIZE)] == data_cpu[j][$size(addr_t)-1:$clog2(LANE_SIZE)]) begin
               result.fifo_entry = data_cpu[j];
               result.matches_lane = 1'b1;
               result.matches_petition = cpu_req_i[$clog2(LANE_SIZE)-1:0] == data_cpu[j][$clog2(LANE_SIZE)-1:0];
@@ -163,6 +163,7 @@ module hwpf_nl
       logic insert_queue = 1'b0;
       cpu_addr_t insert_value_queue;
       fifo_search_result_t firstSearchResult;
+      fifo_search_result_t nextSearchResult;
       cpu_addr_t next_addr;
 
       fifo_push_i[0] = 1'b0;
@@ -184,39 +185,36 @@ module hwpf_nl
         integer next_lane_size = LANE_SIZE;
         cpu_addr = cpu_req_i.data_rs1 & ~(LANE_SIZE-1);
         firstSearchResult = `findData(cpu_req_i.data_rs1);
-        // We are going to insert the new entry in the FIFO
-        fifo_push_i[0] = 1'b1;
-        fifo_req_i[0] = cpu_addr;
 
-        if (firstSearchResult.matches_petition) begin
-          // We have petitioned this exact lane, we are putting back the same entry to preserve it in the FIFO.
-          // We are not prefetching, as we don't see a a stride going on.
-          fifo_push_i[0] = 1'b1;
-          fifo_req_i[0] = cpu_addr;
-        end
-        else if (firstSearchResult.matches_lane) begin
-          // Match! Refresh the entry in the FIFO
-          fifo_push_i[0] = 1'b1;
+        fifo_push_i[0] = 1'b1;
+
+        if (firstSearchResult.matches_lane && !firstSearchResult.matches_petition) begin
           fifo_req_i[0] = firstSearchResult.fifo_entry;
 
           // Now lets see if we had already prefetched the next line
           next_addr = cpu_addr+next_lane_size;
 
-          // We are also going to push this entry into the FIFO
-          fifo_push_i[1] = 1'b1;
-          fifo_req_i[1] = next_addr;
+          nextSearchResult = `findData(next_addr);
 
-          if (!`findData(next_addr)) begin
+          fifo_push_i[1] = 1'b1;
+
+          if(nextSearchResult.matches_lane) begin
+              // We are going to push this entry into the FIFO
+              fifo_req_i[1] = nextSearchResult.fifo_entry;
+          end
+          else begin
               // Send this to the list of addresses to prefetch
               insert_queue = 1'b1;
               insert_value_queue = next_addr;
+
+              // We are also going to push this entry into the FIFO
+              fifo_req_i[1] = next_addr;
           end
         end
-        else begin
+        else if (!firstSearchResult.matches_lane) begin
           // It's the first time we see this new entry;
           // we are going to push it to the FIFO and await another match to start prefetching.
-          fifo_push_i[0] = 1'b1;
-          fifo_req_i[0] = cpu_addr;
+          fifo_req_i[0] = cpu_req_i.data_rs1;
         end
       end
 
